@@ -2,37 +2,81 @@ import Head from 'next/head';
 import { Footer } from '../../components/commons/Footer';
 import { Menu } from '../../components/commons/Menu';
 import { Box, Text, theme } from '../../theme/components';
+import { cmsService } from '../../infra/cms/cmsService';
+import { renderNodeRule, StructuredText } from 'react-datocms';
+import { isHeading } from 'datocms-structured-text-utils';
+import CMSProvider from '../../infra/cms/CMSProvider';
+import { pageHOC } from '../../components/wrappers/pageHOC';
+
 
 export async function getStaticPaths() {
+  const pathsQuery = `
+    query($first: IntType, $skip: IntType) {
+      allContentFaqQuestions(first: $first, skip: $skip) {
+        id
+        title
+      }
+    }
+  `;
+
+  const { data } = await cmsService({
+    query: pathsQuery,
+    variables: {
+      "first": 100,
+      "skip": 0
+    }
+  });
+
+  const paths = data.allContentFaqQuestions.map(({ id }) => {
+    return {
+      params: { id },
+    }
+  })
+  
+  console.log(paths);
+  
   return {
-    paths: [
-      { params: { id: 'f138c88d' } },
-      { params: { id: 'h138c88d' } },
-    ],
+    paths,
     fallback: false,
   };
 }
 
-export function getStaticProps({ params }) {
+export async function getStaticProps({ params, preview }) {
   const { id } = params;
+  const contentQuery = `
+    query($id: ItemId) {
+      contentFaqQuestion(filter: {
+        id: {
+          eq: $id
+        }
+      }) {
+        title
+        content {
+          value
+        }
+      }
+    }
+  `;
+
+  const { data } = await cmsService({
+    query: contentQuery,
+    variables: {
+      "id": id
+    },
+    preview,
+  });
+
   return {
     props: {
+      cmsContent: data,
       id,
-      title: 'Fake Title',
-      content: `
-        <h2>Primeiro Tópico</h2>
-        <p>paragrafo simples</p>
-        <p>outro paragrafo simples</p>
-        <ul>
-          <li>Item de lista 01</li>
-          <li>Item de lista 02</li>
-        </ul>
-      `,
+      title: data.contentFaqQuestion.title,
+      content: data.contentFaqQuestion.content,
     }
   }
 }
 
-export default function FAQQuestionScreen({ title, content }) {
+function FAQQuestionScreen({ cmsContent }) {
   return (
     <>
       <Head>
@@ -52,8 +96,6 @@ export default function FAQQuestionScreen({ title, content }) {
       >
         <Box
           styleSheet={{
-            display: 'flex',
-            gap: theme.space.x4,
             flexDirection: 'column',
             width: '100%',
             maxWidth: theme.space.xcontainer_lg,
@@ -61,10 +103,27 @@ export default function FAQQuestionScreen({ title, content }) {
           }}
         >
           <Text tag="h1" variant="heading1">
-            {title}
+            {cmsContent.contentFaqQuestion.title}
           </Text>
 
-          <Box dangerouslySetInnerHTML={{ __html: content }} />
+          <StructuredText
+            data={cmsContent.contentFaqQuestion.content}
+            customNodeRules={[
+              renderNodeRule(isHeading, ({ node, children, key }) => {
+                const tag = `h${node.level}`;
+                const variant = `heading${node.level}`;
+                return (
+                  <Text tag={tag} variant={variant} key={key}>
+                    {children}
+                  </Text>
+                )
+              })
+            ]}
+          />
+          {/* <pre>
+            {JSON.stringify(content, null, 4)}
+          </pre> */}
+          {/* <Box dangerouslySetInnerHTML={{ __html: content }} /> */}
         </Box>
       </Box>
 
@@ -72,3 +131,5 @@ export default function FAQQuestionScreen({ title, content }) {
     </>
   )
 }
+
+export default pageHOC(FAQQuestionScreen)
